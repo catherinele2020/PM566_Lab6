@@ -1,0 +1,162 @@
+---
+title: "Lab 06: Text Mining"
+author: Catherine Le
+format: 
+  html:
+    embed-resources: true
+editor: visual
+---
+
+# Preliminary
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidytext)
+mt_samples <- read_csv("https://raw.githubusercontent.com/USCbiostats/data-science-data/master/00_mtsamples/mtsamples.csv")
+mt_samples <- mt_samples %>%
+  select(description, medical_specialty, transcription)
+
+head(mt_samples)
+```
+
+## **Question 1: What specialties do we have?**
+
+```{r}
+mt_samples %>%
+  count(medical_specialty, sort = TRUE)
+```
+
+There does not seem to be much overlap between categories. The categories are not evenly distributed. It seems like the category "surgery" (count = 1103) appears the most whereas "hospice" appears the least (count = 6).
+
+## **Question 2**
+
+```{r}
+mt_samples %>%
+  unnest_tokens(token, transcription) %>%
+  count(token, sort = TRUE) %>% # counts the number of tokens
+  top_n(20, n) # gives us the first most frequent words
+```
+
+Visualize the top 20 words
+
+```{r}
+library(ggplot2)
+mt_samples %>%
+  unnest_tokens(token, transcription) %>%
+  count(token) %>%
+  top_n(20, n) %>%
+  ggplot(aes(n, token)) +
+  geom_col()
+```
+
+These results do make sense. It does not give us any insights because these words are not very unique. In fact, most of the top 20 words are stopwords.
+
+## **Question 3**
+
+Redoing the visualization but removing the stopwords
+
+```{r}
+library(forcats)
+
+mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = c("word")) %>%
+  count(word, sort = TRUE) %>%
+  top_n(20, n) %>%
+  ggplot(aes(n, fct_reorder(word, n))) +
+  geom_col()
+```
+
+Extra credit: removing stop words and **numbers**
+
+```{r}
+library(stringr)
+
+mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  filter(!str_detect(word, "\\d+")) %>%  # remove tokens containing numbers
+  anti_join(stop_words, by = c("word")) %>% # remove tokens containing stopwords
+  count(word, sort = TRUE) %>%
+  top_n(20, n) %>%
+  ggplot(aes(n, fct_reorder(word, n))) +
+  geom_col()
+```
+
+Now that we have removed the words and the numbers, it is easier to see what the text is about. It allows us to see very clearly which medical words are used the most in this text.
+
+# **Question 4**
+
+Tokenize into bigrams
+
+```{r}
+mt_samples %>%
+  unnest_tokens(bigram, transcription, token = "ngrams", n = 2) 
+```
+
+Tokenize into trigrams
+
+```{r}
+mt_samples %>%
+  unnest_tokens(trigram, transcription, token = "ngrams", n = 3) 
+```
+
+For trigrams, the words are split into three. For bigrams, the words are split into two. For the most part, the results are the same. Either way, it's clear to see that the text describes the symptoms of each patient.
+
+# **Question 5**
+
+Picking the word "patient" and counting the words that appear before and after it.
+
+```{r}
+library(tidyr)
+# counting the words that appear AFTER patient
+mt_samples %>%
+  unnest_ngrams(ngram, transcription, n = 2) %>%
+  separate(ngram, into = c("word1", "word2"), sep = " ") %>%
+  select(word1, word2) %>%
+  filter(word1 == "patient") %>%
+  count(word2, sort = TRUE)
+```
+
+```{r}
+# counting the words that appear BEFORE patient
+mt_samples %>%
+  unnest_ngrams(ngram, transcription, n = 2) %>%
+  separate(ngram, into = c("word1", "word2"), sep = " ") %>%
+  select(word1, word2) %>%
+  filter(word2 == "patient") %>%
+  count(word1, sort = TRUE)
+```
+
+# Question 6
+
+Finding the words most used in each speciality
+
+```{r}
+mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words, by = c("word")) %>% # removes stopwords
+  filter(!str_detect(word, "\\d+")) %>% # removes numbers
+  group_by(medical_specialty) %>%
+  count(word, sort = TRUE) %>%
+  top_n(5, n) %>%
+  arrange(medical_specialty) # arranges by medical specialty
+```
+
+# Question 7
+
+Extra credit question
+
+New insights: finding the tf-idf for each 'text' in each medical specialty
+
+```{r}
+# tf: term frequency: counts the number of times a word appears
+# idf: inverse document frequency
+mt_samples %>%
+  unnest_tokens(text, transcription) %>%
+  count(text, medical_specialty) %>%
+  bind_tf_idf(text, medical_specialty, n) %>%
+  arrange(desc(tf_idf))
+```
+
+The word carbohydrate has has the highest tf-idf in the diets and nutrition category. This word has a high tf and idf which means that the word "carbohydrate" is quite unique and occurs quite frequently.
